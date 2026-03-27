@@ -1,8 +1,8 @@
 # src/dedupe/scanner.py
 import glob as glob_module
-import os
 import zipfile
 import tarfile
+from datetime import datetime
 from pathlib import Path
 
 from .models import ScannedFile, ArchiveEntry
@@ -79,6 +79,8 @@ def scan_sources(
                     abs_path, source_index
                 )
                 files.extend(archive_files)
+                for af in archive_files:
+                    seen_paths.add(af.path)
                 archives.append(archive_entry)
                 warnings.extend(archive_warnings)
                 seen_paths.add(abs_path)
@@ -113,10 +115,14 @@ def _inspect_archive(
                         continue
                     if Path(info.filename).suffix.lower() not in SUPPORTED_EXTENSIONS:
                         continue
+                    if any(info.date_time):
+                        mtime = datetime(*info.date_time).timestamp()
+                    else:
+                        mtime = p.stat().st_mtime
                     member_files.append(ScannedFile(
                         path=f"zip://{archive_path}::{info.filename}",
                         size=info.file_size,
-                        mtime=p.stat().st_mtime,
+                        mtime=mtime,
                         source_index=source_index,
                         is_archive_member=True,
                         archive_path=archive_path,

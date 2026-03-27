@@ -133,3 +133,46 @@ def test_scan_unreadable_archive_flagged(tmp_path):
     assert archives[0].readable is False
     assert len(warnings) == 1
     assert "cannot inspect archive" in warnings[0]
+
+
+def test_scan_no_duplicate_archive_members_across_overlapping_globs(tmp_path):
+    zip_path = tmp_path / "photos.zip"
+    with zipfile.ZipFile(zip_path, 'w') as zf:
+        zf.writestr("IMG_001.jpg", b"fake jpeg content")
+    # Two patterns that both match the same zip file
+    files, archives, _ = scan_sources([str(tmp_path / "**"), str(tmp_path / "*.zip")])
+    archive_members = [f for f in files if f.is_archive_member]
+    paths = [f.path for f in archive_members]
+    assert len(paths) == len(set(paths)), "Archive members must not be duplicated"
+    assert len(archive_members) == 1
+
+
+def test_scan_inspects_tar_gz_archive(tmp_path):
+    import gzip
+    tar_gz_path = tmp_path / "photos.tar.gz"
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w:gz') as tf:
+        data = b"fake jpeg content"
+        info = tarfile.TarInfo(name="vacation/IMG_001.jpg")
+        info.size = len(data)
+        tf.addfile(info, io.BytesIO(data))
+    tar_gz_path.write_bytes(buf.getvalue())
+    files, archives, warnings = scan_sources([str(tmp_path / "**")])
+    archive_members = [f for f in files if f.is_archive_member]
+    assert len(archive_members) == 1
+    assert "IMG_001.jpg" in archive_members[0].path
+    assert archives[0].archive_type == "tar"
+    assert archives[0].readable is True
+
+
+def test_scan_archive_with_no_media_files(tmp_path):
+    zip_path = tmp_path / "docs.zip"
+    with zipfile.ZipFile(zip_path, 'w') as zf:
+        zf.writestr("readme.txt", b"just text")
+        zf.writestr("notes.txt", b"more text")
+    files, archives, _ = scan_sources([str(tmp_path / "**")])
+    archive_members = [f for f in files if f.is_archive_member]
+    assert len(archive_members) == 0
+    assert len(archives) == 1
+    assert archives[0].contained_files == 0
+    assert archives[0].readable is True

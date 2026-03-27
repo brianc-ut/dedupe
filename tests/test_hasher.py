@@ -1,7 +1,9 @@
-import zipfile
+import hashlib
 import io
+import tarfile
+import zipfile
 from pathlib import Path
-from dedupe.hasher import group_by_hash
+from dedupe.hasher import group_by_hash, _read_content
 from dedupe.models import ScannedFile
 
 
@@ -45,7 +47,7 @@ def test_hash_is_sha256_hex(tmp_path):
     f2 = make_file("b.jpg", content, tmp_path)
     groups = group_by_hash([f1, f2])
     dup = next(g for g in groups if len(g.files) > 1)
-    assert len(dup.hash) == 64  # SHA-256 hex
+    assert dup.hash == hashlib.sha256(content).hexdigest()
 
 
 def test_empty_input_returns_empty(tmp_path):
@@ -71,3 +73,20 @@ def test_archive_member_hashed_correctly(tmp_path):
     groups = group_by_hash([loose, archive_member])
     dup_groups = [g for g in groups if len(g.files) > 1]
     assert len(dup_groups) == 1  # loose and archive member are duplicates
+
+
+def test_read_content_tar_member(tmp_path):
+    content = b"tar member content"
+    tar_path = tmp_path / "photos.tar"
+    with tarfile.open(tar_path, 'w') as tf:
+        info = tarfile.TarInfo(name="photo.jpg")
+        info.size = len(content)
+        tf.addfile(info, io.BytesIO(content))
+
+    member = ScannedFile(
+        path=f"tar://{tar_path}::photo.jpg",
+        size=len(content), mtime=tar_path.stat().st_mtime,
+        source_index=0, is_archive_member=True, archive_path=str(tar_path)
+    )
+    result = _read_content(member)
+    assert result == content

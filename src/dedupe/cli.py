@@ -55,6 +55,9 @@ def plan(
     write_plan(plan_data, output)
     console.print(f"[green]Plan written to {output}[/green]")
 
+    if warnings:
+        raise typer.Exit(1)
+
 
 @app.command()
 def move(

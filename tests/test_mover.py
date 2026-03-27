@@ -85,3 +85,10 @@ def test_cleanup_skips_archive_member_duplicates(tmp_path):
     # Archive members can't be moved as loose files — should be noted, not error
     assert len(result["skipped_archive_members"]) == 1
     assert result["planned"] == []
+
+
+def test_move_flatten_strips_directory(tmp_path):
+    plan = make_plan(tmp_path, dest_rel="2024/03/15/img.jpg")
+    dest_dir = tmp_path / "dest"
+    result = execute_move(plan, dest=str(dest_dir), dry_run=True, flatten=True)
+    assert result["planned"][0]["to"] == str(dest_dir / "img.jpg")

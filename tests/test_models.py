@@ -29,6 +29,11 @@ def test_selected_file_fields():
     assert s.best.path == "/a/b.jpg"
     assert len(s.duplicates) == 1
 
+def test_archive_entry_fields():
+    a = ArchiveEntry(path="/a/b.zip", archive_type="zip", readable=True, contained_files=12)
+    assert a.archive_type == "zip"
+    assert a.contained_files == 12
+
 def test_file_metadata_fields():
     m = FileMetadata(original_date=datetime(2024, 3, 15), camera="iPhone 13",
                      dimensions="4032x3024", duration=None,

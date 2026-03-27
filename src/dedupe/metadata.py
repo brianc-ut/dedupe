@@ -1,5 +1,6 @@
-import subprocess
+import json
 import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -119,6 +120,26 @@ def _extract_hachoir(path: str) -> FileMetadata:
                             duration=None, file_type=file_type, date_source="none")
 
 
+def _parse_exiftool_duration(raw: str | None) -> float | None:
+    """Parse exiftool duration string (e.g. '0:00:15' or '15.0 s') to seconds."""
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        pass
+    try:
+        parts = str(raw).replace(" s", "").split(":")
+        parts = [float(p) for p in parts]
+        if len(parts) == 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        if len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        return parts[0]
+    except Exception:
+        return None
+
+
 def _extract_exiftool(path: str) -> FileMetadata:
     """Extract metadata using exiftool (optional system dependency)."""
     file_type = _file_type(path)
@@ -132,7 +153,6 @@ def _extract_exiftool(path: str) -> FileMetadata:
              "-ImageWidth", "-ImageHeight", "-Duration", "-j", path],
             capture_output=True, text=True, timeout=10
         )
-        import json
         data = json.loads(result.stdout)
         if not data:
             return FileMetadata(original_date=None, camera=None, dimensions=None,
@@ -154,7 +174,7 @@ def _extract_exiftool(path: str) -> FileMetadata:
             original_date=original_date,
             camera=camera,
             dimensions=dimensions,
-            duration=d.get("Duration"),
+            duration=_parse_exiftool_duration(d.get("Duration")),
             file_type=file_type,
             date_source="exiftool" if original_date else "none",
         )

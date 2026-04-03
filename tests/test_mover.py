@@ -110,6 +110,72 @@ def test_move_flatten_strips_directory(tmp_path):
     assert result["planned"][0]["to"] == str(dest_dir / "img.jpg")
 
 
+def test_execute_move_stamps_with_original_date_when_present(tmp_path):
+    """stamp_mtime in planned output should be original_date timestamp when EXIF date exists."""
+    img = tmp_path / "img.jpg"
+    img.write_bytes(b"photo")
+    from datetime import datetime
+    original_date = "2023-07-04T14:22:00"
+    plan = {
+        "files": {"image": {"iPhone": [{
+            "best": str(img),
+            "dest": "2023/07/04/img.jpg",
+            "original_date": original_date,
+        }]}},
+        "archives": [],
+    }
+    result = execute_move(plan, dest=str(tmp_path / "dest"), dry_run=True)
+    stamp = result["planned"][0]["stamp_mtime"]
+    assert abs(stamp - datetime.fromisoformat(original_date).timestamp()) < 1
+
+
+def test_execute_move_stamps_with_canonical_mtime_when_no_original_date(tmp_path):
+    """stamp_mtime should be canonical_mtime when no EXIF date."""
+    img = tmp_path / "img.jpg"
+    img.write_bytes(b"photo")
+    canonical = 1234567890.0
+    plan = {
+        "files": {"image": {"unknown": [{
+            "best": str(img),
+            "dest": "undated/2009/02/13/img.jpg",
+            "canonical_mtime": canonical,
+        }]}},
+        "archives": [],
+    }
+    result = execute_move(plan, dest=str(tmp_path / "dest"), dry_run=True)
+    assert result["planned"][0]["stamp_mtime"] == canonical
+
+
+def test_execute_move_no_stamp_mtime_when_no_date_info(tmp_path):
+    """No stamp_mtime when neither original_date nor canonical_mtime present."""
+    plan = make_plan(tmp_path)
+    result = execute_move(plan, dest=str(tmp_path / "dest"), dry_run=True)
+    assert "stamp_mtime" not in result["planned"][0]
+
+
+def test_move_skips_already_at_dest(tmp_path):
+    """execute_move skips entries marked already_at_dest."""
+    dest_dir = tmp_path / "dest"
+    dest_file = dest_dir / "2024" / "03" / "15" / "img.jpg"
+    dest_file.parent.mkdir(parents=True)
+    dest_file.write_bytes(b"photo")
+    plan = {
+        "files": {
+            "image": {
+                "unknown": [{
+                    "best": str(dest_file),
+                    "dest": "2024/03/15/img.jpg",
+                    "already_at_dest": True,
+                }]
+            }
+        },
+        "archives": [],
+    }
+    result = execute_move(plan, dest=str(dest_dir), dry_run=True)
+    assert result["planned"] == []
+    assert result["warnings"] == []
+
+
 def test_move_traverses_multiple_type_and_camera_groups(tmp_path):
     """execute_move should visit all type/camera groups."""
     img1 = tmp_path / "a.jpg"

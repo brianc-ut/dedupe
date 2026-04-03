@@ -97,6 +97,33 @@ def scan_sources(
     return files, archives, warnings
 
 
+def scan_dest(dest_dir: str) -> list[ScannedFile]:
+    """Scan existing media files in dest directory. Returns ScannedFile with is_dest_file=True."""
+    result = []
+    dest_path = Path(dest_dir)
+    if not dest_path.is_dir():
+        return result
+    for p in dest_path.rglob('*'):
+        if not p.is_file():
+            continue
+        if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            continue
+        try:
+            stat = p.stat()
+            result.append(ScannedFile(
+                path=str(p),
+                size=stat.st_size,
+                mtime=stat.st_mtime,
+                source_index=-1,
+                is_archive_member=False,
+                archive_path=None,
+                is_dest_file=True,
+            ))
+        except OSError:
+            pass
+    return result
+
+
 def _inspect_archive(
     archive_path: str,
     source_index: int,

@@ -2,7 +2,7 @@ import yaml
 from pathlib import Path
 from datetime import datetime
 from dedupe.planner import build_plan, write_plan, read_plan, compute_dest_path
-from dedupe.models import ScannedFile, SelectedFile, FileMetadata, ArchiveEntry
+from dedupe.models import ScannedFile, SelectedFile, FileMetadata, ArchiveEntry, DuplicateGroup
 
 
 def make_scanned(path: str, mtime: float = 1000.0, source_index: int = 0) -> ScannedFile:
@@ -38,6 +38,15 @@ def test_compute_dest_path_undated_uses_mtime_for_subdir():
     m = make_meta(None)
     dest = compute_dest_path(f, m)
     assert dest == "undated/2023/06/15/IMG.jpg"
+
+
+def test_compute_dest_path_undated_uses_canonical_mtime_when_provided():
+    """canonical_mtime overrides scanned_file.mtime for undated path."""
+    f = make_scanned("/photos/IMG.jpg", mtime=datetime(2023, 6, 15).timestamp())
+    m = make_meta(None)
+    canonical = datetime(2021, 1, 5).timestamp()
+    dest = compute_dest_path(f, m, canonical_mtime=canonical)
+    assert dest == "undated/2021/01/05/IMG.jpg"
 
 
 def test_compute_dest_path_flatten():
@@ -255,6 +264,34 @@ def test_undated_files_go_to_undated_folder():
     assert entry["dest"] == "undated/2023/06/15/img.jpg"
 
 
+def test_build_plan_stores_canonical_mtime_when_archive_has_earlier_mtime():
+    """canonical_mtime stored in entry when archive member has earlier mtime."""
+    loose_mtime = datetime(2023, 6, 15).timestamp()
+    archive_mtime = datetime(2021, 1, 5).timestamp()
+    loose = ScannedFile(path="/photos/img.jpg", size=100, mtime=loose_mtime,
+                        source_index=0, is_archive_member=False, archive_path=None)
+    archive = ScannedFile(path="zip:///backup.zip::img.jpg", size=100, mtime=archive_mtime,
+                          source_index=0, is_archive_member=True, archive_path="/backup.zip")
+    from dedupe.selector import select_best
+    group = DuplicateGroup(hash="abc123", files=[loose, archive])
+    sel = select_best(group)
+    metadata = {"/photos/img.jpg": make_meta(None)}
+    plan = build_plan(sources=[], selected=[sel], metadata=metadata, archives=[])
+    entry = plan["files"]["image"]["unknown"][0]
+    assert entry["best"] == "/photos/img.jpg"
+    assert entry.get("canonical_mtime") == archive_mtime
+    assert entry["dest"] == f"undated/2021/01/05/img.jpg"
+
+
+def test_build_plan_no_canonical_mtime_when_best_mtime_is_already_earliest():
+    """canonical_mtime omitted when best file already has the earliest mtime."""
+    sel = make_selected("/photos/img.jpg")
+    metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15))}
+    plan = build_plan(sources=[], selected=[sel], metadata=metadata, archives=[])
+    entry = plan["files"]["image"]["unknown"][0]
+    assert "canonical_mtime" not in entry
+
+
 def test_build_plan_date_source_none_omitted():
     """date_source should be omitted from entry when no date was found."""
     selected = [make_selected("/photos/img.jpg")]
@@ -262,6 +299,59 @@ def test_build_plan_date_source_none_omitted():
     plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
     entry = plan["files"]["image"]["unknown"][0]
     assert "date_source" not in entry
+
+
+def test_build_plan_already_at_dest(tmp_path):
+    """When best is a dest file, entry gets already_at_dest=True and relative dest path."""
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+    dest_file = dest_dir / "2024" / "03" / "15" / "img.jpg"
+    dest_file.parent.mkdir(parents=True)
+    dest_file.write_bytes(b"photo")
+
+    best = ScannedFile(path=str(dest_file), size=100, mtime=1000.0, source_index=-1,
+                       is_archive_member=False, archive_path=None, is_dest_file=True)
+    source_dup = make_scanned("/source/img.jpg", mtime=2000.0, source_index=0)
+    sel = SelectedFile(hash="abc123", best=best, duplicates=[source_dup])
+    metadata = {str(dest_file): make_meta(datetime(2024, 3, 15))}
+
+    plan = build_plan(sources=[], selected=[sel], metadata=metadata, archives=[],
+                      dest_dir=str(dest_dir))
+    entry = plan["files"]["image"]["unknown"][0]
+    assert entry["already_at_dest"] is True
+    assert entry["dest"] == "2024/03/15/img.jpg"
+    assert entry["best"] == str(dest_file)
+    assert entry["duplicates"] == ["/source/img.jpg"]
+
+
+def test_build_plan_dest_file_excluded_from_duplicates(tmp_path):
+    """Dest files in the duplicates list are excluded — they're already in place."""
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+
+    source_best = make_scanned("/source/img.jpg", mtime=1000.0)
+    dest_dup = ScannedFile(path=str(dest_dir / "img.jpg"), size=100, mtime=500.0,
+                           source_index=-1, is_archive_member=False, archive_path=None,
+                           is_dest_file=True)
+    # Force source as best by not using is_dest_file ordering (direct construction)
+    sel = SelectedFile(hash="abc123", best=source_best, duplicates=[dest_dup])
+    metadata = {"/source/img.jpg": make_meta(datetime(2024, 3, 15))}
+
+    plan = build_plan(sources=[], selected=[sel], metadata=metadata, archives=[],
+                      dest_dir=str(dest_dir))
+    entry = plan["files"]["image"]["unknown"][0]
+    assert "duplicates" not in entry  # dest dup filtered out, list empty → omitted
+
+
+def test_build_plan_already_at_dest_without_dest_dir():
+    """Without dest_dir, is_dest_file best falls through to normal path computation."""
+    best = ScannedFile(path="/dest/img.jpg", size=100, mtime=1000.0, source_index=-1,
+                       is_archive_member=False, archive_path=None, is_dest_file=True)
+    sel = SelectedFile(hash="abc123", best=best, duplicates=[])
+    metadata = {"/dest/img.jpg": make_meta(datetime(2024, 3, 15))}
+    plan = build_plan(sources=[], selected=[sel], metadata=metadata, archives=[])
+    entry = plan["files"]["image"]["unknown"][0]
+    assert "already_at_dest" not in entry
 
 
 def test_build_plan_empty_duplicates_omitted():

@@ -43,15 +43,29 @@ def execute_move(
     warnings = []
 
     for entry in _iter_file_entries(plan):
+        if entry.get("already_at_dest"):
+            continue
         src = entry["best"]
         if not Path(src).exists():
             warnings.append(f"Warning: source file not found, skipping: {src}")
             continue
         rel = Path(entry["dest"]).name if flatten else entry["dest"]
         dst = str(Path(dest) / rel)
-        planned.append({"from": src, "to": dst})
+
+        planned_item: dict = {"from": src, "to": dst}
+        # Determine authoritative timestamp: original_date > canonical_mtime > none
+        if "original_date" in entry:
+            from datetime import datetime
+            planned_item["stamp_mtime"] = datetime.fromisoformat(entry["original_date"]).timestamp()
+        elif "canonical_mtime" in entry:
+            planned_item["stamp_mtime"] = entry["canonical_mtime"]
+
+        planned.append(planned_item)
         if not dry_run:
             _safe_move(src, dst)
+            if "stamp_mtime" in planned_item:
+                t = planned_item["stamp_mtime"]
+                os.utime(dst, (t, t))
 
     return {"dry_run": dry_run, "planned": planned, "warnings": warnings}
 

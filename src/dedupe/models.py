@@ -10,6 +10,7 @@ class ScannedFile:
     source_index: int
     is_archive_member: bool
     archive_path: str | None
+    is_dest_file: bool = False  # True when scanned from the destination directory
 
 
 @dataclass
@@ -31,6 +32,7 @@ class SelectedFile:
     hash: str
     best: ScannedFile
     duplicates: list[ScannedFile]
+    canonical_mtime: float | None = None
 
 
 @dataclass

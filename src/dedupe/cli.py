@@ -16,7 +16,7 @@ from .hasher import group_by_hash
 from .metadata import extract_metadata_batch
 from .mover import execute_cleanup, execute_move
 from .planner import build_plan, read_plan, write_plan
-from .scanner import scan_sources
+from .scanner import scan_dest, scan_sources
 from .selector import select_best
 
 app = typer.Typer(help="Photo and video deduplication tool.")
@@ -31,6 +31,7 @@ def _progress(*columns, **kwargs) -> Progress:
 def plan(
     source: Annotated[list[str], typer.Option("--source", help="Comma-separated glob patterns")] = [],
     output: Annotated[str, typer.Option("--output", help="Path to write plan YAML")] = "",
+    dest: Annotated[str, typer.Option("--dest", help="Destination directory — files already present are treated as the best copy")] = "",
     metadata_provider: Annotated[str, typer.Option("--metadata-provider")] = "auto",
     include_hidden: bool = False,
 ):
@@ -47,6 +48,9 @@ def plan(
                    TimeElapsedColumn(), transient=True) as progress:
         task = progress.add_task("Scanning sources...", total=None)
         files, archives, warnings = scan_sources(source, include_hidden=include_hidden)
+        if dest:
+            dest_files = scan_dest(dest)
+            files = dest_files + files
         progress.update(task, description=f"Scanned — {len(files)} media files, {len(archives)} archives")
 
     for w in warnings:
@@ -79,7 +83,8 @@ def plan(
         )
 
     plan_data = build_plan(sources=source, selected=selected,
-                           metadata=metadata, archives=archives)
+                           metadata=metadata, archives=archives,
+                           dest_dir=dest or None)
     write_plan(plan_data, output)
     console.print(f"[green]Plan written to {output}[/green]")
 

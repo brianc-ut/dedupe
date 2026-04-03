@@ -11,6 +11,8 @@ from pathlib import Path
 from .planner import read_plan
 
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.heic', '.heif', '.tiff', '.gif', '.webp', '.bmp'}
+VIDEO_EXTENSIONS = {'.mp4', '.mov', '.m4v', '.mpeg', '.mpg', '.avi'}
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 _HTML = """\
 <!DOCTYPE html>
@@ -181,6 +183,7 @@ body {
     <div id="detail" style="display:none">
       <div id="preview-panel">
         <img id="preview" alt="preview">
+        <video id="video-preview" controls style="display:none;max-width:100%;max-height:100%"></video>
         <div id="no-preview"></div>
       </div>
       <div id="meta-panel">
@@ -253,7 +256,7 @@ function renderNode(node, container, depth) {
     hdr.style.paddingLeft = pad + 'px';
     hdr.innerHTML =
       '<span class="arrow open">\u25b6</span>' +
-      '<span class="folder-icon">\uD83D\uDCC1</span>' +
+      '<span class="folder-icon">\U0001F4C1</span>' +
       '<span class="fname">' + esc(name) + '</span>' +
       '<span class="fcount">' + countFiles(child) + '</span>';
     const kids = document.createElement('div');
@@ -273,7 +276,7 @@ function renderNode(node, container, depth) {
     el.className = 'tree-file' + (entry.dest === selectedDest ? ' selected' : '');
     el.style.paddingLeft = pad + 'px';
     el.dataset.dest = entry.dest;
-    const icon = entry._type === 'video' ? '\uD83C\uDFAC' : '\uD83D\uDDBC\uFE0F';
+    const icon = entry._type === 'video' ? '\U0001F3AC' : '\U0001F5BC\uFE0F';
     el.innerHTML =
       '<span class="file-icon">' + icon + '</span>' +
       '<span class="fname">' + esc(filename) + '</span>' +
@@ -302,14 +305,19 @@ function showDetail(e) {
 
   // Preview
   const img = document.getElementById('preview');
+  const vid = document.getElementById('video-preview');
   const nop = document.getElementById('no-preview');
+  img.style.display = 'none';
+  vid.style.display = 'none';
+  nop.textContent = '';
+  const mediaUrl = '/api/image?path=' + encodeURIComponent(e.best);
   if (e._type === 'video') {
-    img.style.display = 'none';
-    nop.textContent = '\uD83C\uDFAC';
+    vid.style.display = 'block';
+    vid.src = mediaUrl;
+    vid.onerror = () => { vid.style.display = 'none'; nop.textContent = '\u26A0\uFE0F'; };
   } else {
-    nop.textContent = '';
     img.style.display = 'block';
-    img.src = '/api/image?path=' + encodeURIComponent(e.best);
+    img.src = mediaUrl;
     img.onerror = () => { img.style.display = 'none'; nop.textContent = '\u26A0\uFE0F'; };
   }
 
@@ -408,7 +416,7 @@ def serve(plan_path: str, port: int = 8421) -> None:
 
         def _serve_image(self, path: str):
             p = Path(path)
-            if not p.exists() or not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
+            if not p.exists() or not p.is_file() or p.suffix.lower() not in MEDIA_EXTENSIONS:
                 self.send_error(404)
                 return
             mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"

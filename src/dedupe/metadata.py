@@ -99,6 +99,8 @@ def _extract_hachoir(path: str) -> FileMetadata:
                             duration=None, file_type=file_type, date_source="none")
     try:
         logging.getLogger("hachoir").setLevel(logging.CRITICAL)
+        from hachoir.core.log import log as hachoir_log
+        hachoir_log.use_print = False
         parser = createParser(path)
         if not parser:
             return FileMetadata(original_date=None, camera=None, dimensions=None,

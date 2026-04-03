@@ -76,7 +76,7 @@ def build_plan(
 ) -> dict:
     """Build the plan dict from selected files and metadata."""
     existing_dests: set[str] = set()
-    file_entries = []
+    files_by_type_camera: dict = {}
 
     for sel in selected:
         best_path = sel.best.path
@@ -91,23 +91,24 @@ def build_plan(
         # Clean up internal sentinel hash used for unique-size files
         display_hash = sel.hash if not sel.hash.startswith("unique:") else "unique"
 
-        meta_dict: dict = {"type": meta.file_type, "date_source": meta.date_source}
-        if meta.original_date:
-            meta_dict["original_date"] = meta.original_date.isoformat()
-        if meta.camera:
-            meta_dict["camera"] = meta.camera
-        if meta.dimensions:
-            meta_dict["dimensions"] = meta.dimensions
-        if meta.duration is not None:
-            meta_dict["duration"] = meta.duration
+        file_type = meta.file_type
+        camera = meta.camera or "unknown"
 
-        file_entries.append({
+        entry: dict = {
             "hash": display_hash,
             "best": best_path,
             "best_dest": best_dest,
-            "meta": meta_dict,
+            "date_source": meta.date_source,
             "duplicates": [d.path for d in sel.duplicates],
-        })
+        }
+        if meta.original_date:
+            entry["original_date"] = meta.original_date.isoformat()
+        if meta.dimensions:
+            entry["dimensions"] = meta.dimensions
+        if meta.duration is not None:
+            entry["duration"] = meta.duration
+
+        files_by_type_camera.setdefault(file_type, {}).setdefault(camera, []).append(entry)
 
     archive_entries = []
     for arc in archives:
@@ -128,7 +129,7 @@ def build_plan(
 
     return {
         "sources": sources,
-        "files": file_entries,
+        "files": files_by_type_camera,
         "archives": archive_entries,
     }
 

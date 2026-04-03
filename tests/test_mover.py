@@ -4,7 +4,9 @@ from dedupe.mover import execute_move, execute_cleanup
 
 def make_plan(tmp_path: Path, best_name: str = "img.jpg",
               dest_rel: str = "2024/03/15/img.jpg",
-              dup_names: list[str] | None = None) -> dict:
+              dup_names: list[str] | None = None,
+              file_type: str = "image",
+              camera: str = "unknown") -> dict:
     best = tmp_path / best_name
     best.write_bytes(b"photo content")
     dups = []
@@ -13,11 +15,15 @@ def make_plan(tmp_path: Path, best_name: str = "img.jpg",
         d.write_bytes(b"photo content")
         dups.append(str(d))
     return {
-        "files": [{
-            "best": str(best),
-            "best_dest": dest_rel,
-            "duplicates": dups,
-        }],
+        "files": {
+            file_type: {
+                camera: [{
+                    "best": str(best),
+                    "best_dest": dest_rel,
+                    "duplicates": dups,
+                }]
+            }
+        },
         "archives": [],
     }
 
@@ -43,9 +49,15 @@ def test_move_dry_run_reports_planned_moves(tmp_path):
 def test_move_skips_missing_source_with_warning(tmp_path):
     dest_dir = tmp_path / "dest"
     plan = {
-        "files": [{"best": str(tmp_path / "nonexistent.jpg"),
-                   "best_dest": "2024/01/01/nonexistent.jpg",
-                   "duplicates": []}],
+        "files": {
+            "image": {
+                "unknown": [{
+                    "best": str(tmp_path / "nonexistent.jpg"),
+                    "best_dest": "2024/01/01/nonexistent.jpg",
+                    "duplicates": [],
+                }]
+            }
+        },
         "archives": [],
     }
     result = execute_move(plan, dest=str(dest_dir), dry_run=True)
@@ -72,11 +84,15 @@ def test_cleanup_dry_run_reports_planned_moves(tmp_path):
 
 def test_cleanup_skips_archive_member_duplicates(tmp_path):
     plan = {
-        "files": [{
-            "best": str(tmp_path / "img.jpg"),
-            "best_dest": "2024/01/01/img.jpg",
-            "duplicates": ["zip:///archive.zip::vacation/img.jpg"],
-        }],
+        "files": {
+            "image": {
+                "unknown": [{
+                    "best": str(tmp_path / "img.jpg"),
+                    "best_dest": "2024/01/01/img.jpg",
+                    "duplicates": ["zip:///archive.zip::vacation/img.jpg"],
+                }]
+            }
+        },
         "archives": [],
     }
     (tmp_path / "img.jpg").write_bytes(b"photo")
@@ -92,3 +108,24 @@ def test_move_flatten_strips_directory(tmp_path):
     dest_dir = tmp_path / "dest"
     result = execute_move(plan, dest=str(dest_dir), dry_run=True, flatten=True)
     assert result["planned"][0]["to"] == str(dest_dir / "img.jpg")
+
+
+def test_move_traverses_multiple_type_and_camera_groups(tmp_path):
+    """execute_move should visit all type/camera groups."""
+    img1 = tmp_path / "a.jpg"
+    img2 = tmp_path / "b.mp4"
+    img1.write_bytes(b"photo")
+    img2.write_bytes(b"video")
+    plan = {
+        "files": {
+            "image": {
+                "iPhone": [{"best": str(img1), "best_dest": "2024/01/01/a.jpg", "duplicates": []}],
+            },
+            "video": {
+                "unknown": [{"best": str(img2), "best_dest": "2024/01/01/b.mp4", "duplicates": []}],
+            },
+        },
+        "archives": [],
+    }
+    result = execute_move(plan, dest=str(tmp_path / "dest"), dry_run=True)
+    assert len(result["planned"]) == 2

@@ -7,6 +7,13 @@ def _is_archive_member(path: str) -> bool:
     return path.startswith("zip://") or path.startswith("tar://")
 
 
+def _iter_file_entries(plan: dict):
+    """Traverse the nested type -> camera -> [entries] structure."""
+    for camera_groups in plan.get("files", {}).values():
+        for entries in camera_groups.values():
+            yield from entries
+
+
 def _safe_move(src: str, dst: str) -> None:
     """
     Move src to dst atomically where possible.
@@ -35,7 +42,7 @@ def execute_move(
     planned = []
     warnings = []
 
-    for entry in plan.get("files", []):
+    for entry in _iter_file_entries(plan):
         src = entry["best"]
         if not Path(src).exists():
             warnings.append(f"Warning: source file not found, skipping: {src}")
@@ -62,7 +69,7 @@ def execute_cleanup(
     warnings = []
     skipped_archive_members = []
 
-    for entry in plan.get("files", []):
+    for entry in _iter_file_entries(plan):
         for dup_path in entry.get("duplicates", []):
             if _is_archive_member(dup_path):
                 skipped_archive_members.append(dup_path)

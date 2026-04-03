@@ -39,8 +39,8 @@ Three-mode pipeline: `plan` → `move` → `cleanup`. The YAML plan file is the 
 - `hasher.py` — size pre-filter, then SHA-256. Unique-size files get sentinel hash `unique:{path}`. `_read_content()` handles `zip://` and `tar://` archive member paths.
 - `selector.py` — picks best copy by earliest mtime, source_index as tiebreaker.
 - `metadata.py` — `extract_metadata(path, provider="auto")`. Pillow for images, hachoir for video. Auto-fallback to exiftool if available and no date found.
-- `planner.py` — builds plan dict, writes/reads YAML. Sentinel hash `unique:{path}` is written as `"unique"` in output.
-- `mover.py` — `execute_move` and `execute_cleanup`. Both default to `dry_run=True`. Real move ops (`os.rename`/`shutil.move`) are **commented out** in `_safe_move()` — uncomment to enable real moves.
+- `planner.py` — builds plan dict, writes/reads YAML. Sentinel hash `unique:{path}` is written as `"unique"` in output. `files` in the plan is a nested dict: `{type: {camera: [entries]}}`. Each entry has flattened metadata fields (`original_date`, `date_source`, etc.) — no `meta` sub-dict.
+- `mover.py` — `execute_move` and `execute_cleanup`. Both default to `dry_run=True`. Uses `_iter_file_entries()` to traverse the nested `files` dict. Real move ops (`os.rename`/`shutil.move`) are **commented out** in `_safe_move()` — uncomment to enable real moves.
 - `cli.py` — Typer entry point. move/cleanup require `--confirm` flag + typing "confirm" at prompt to execute real moves.
 
 **Archive handling:** ZIP and TAR archives are inspected in-memory. Archive members appear as `ScannedFile` with paths like `zip:///path.zip::member/photo.jpg`. The hasher reads their content directly from the archive. Archive members in duplicate lists are skipped by cleanup (can't move loose).

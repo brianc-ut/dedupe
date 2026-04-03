@@ -16,9 +16,10 @@ def make_selected(best_path: str, dup_paths: list[str] | None = None) -> Selecte
     return SelectedFile(hash="abc123", best=best, duplicates=dups)
 
 
-def make_meta(original_date: datetime | None = None, file_type: str = "image") -> FileMetadata:
+def make_meta(original_date: datetime | None = None, file_type: str = "image",
+              camera: str | None = None) -> FileMetadata:
     return FileMetadata(
-        original_date=original_date, camera=None, dimensions=None,
+        original_date=original_date, camera=camera, dimensions=None,
         duration=None, file_type=file_type,
         date_source="pillow" if original_date else "none"
     )
@@ -62,25 +63,99 @@ def test_compute_dest_path_archive_member():
     assert dest == "2024/06/01/photo.jpg"
 
 
-def test_build_plan_structure():
+# --- New nested structure tests ---
+
+def test_build_plan_files_is_nested_dict():
+    """files should be a nested dict: type -> camera -> [entries]"""
     selected = [make_selected("/photos/img.jpg")]
-    metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15, 10, 22, 1))}
+    metadata = {"/photos/img.jpg": FileMetadata(
+        original_date=datetime(2024, 3, 15, 10, 22, 1),
+        camera="Apple iPhone 14",
+        dimensions=None, duration=None,
+        file_type="image", date_source="pillow"
+    )}
     plan = build_plan(sources=["/photos/**"], selected=selected,
                       metadata=metadata, archives=[])
-    assert "files" in plan
-    assert "archives" in plan
-    assert len(plan["files"]) == 1
-    entry = plan["files"][0]
-    assert entry["best"] == "/photos/img.jpg"
-    assert entry["best_dest"] == "2024/03/15/img.jpg"
-    assert entry["duplicates"] == []
+    assert isinstance(plan["files"], dict)
+    assert "image" in plan["files"]
+    assert "Apple iPhone 14" in plan["files"]["image"]
+    entries = plan["files"]["image"]["Apple iPhone 14"]
+    assert len(entries) == 1
+    assert entries[0]["best"] == "/photos/img.jpg"
+    assert entries[0]["best_dest"] == "2024/03/15/img.jpg"
+
+
+def test_build_plan_no_camera_goes_to_unknown():
+    """Files with no camera metadata are grouped under 'unknown'."""
+    selected = [make_selected("/photos/img.jpg")]
+    metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15))}
+    plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
+    assert "unknown" in plan["files"]["image"]
+    assert len(plan["files"]["image"]["unknown"]) == 1
+
+
+def test_build_plan_meta_fields_flattened():
+    """Entry should have no 'meta' sub-dict; original_date and date_source at top level."""
+    selected = [make_selected("/photos/img.jpg")]
+    metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15, 10, 22, 1))}
+    plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
+    entry = plan["files"]["image"]["unknown"][0]
+    assert "meta" not in entry
+    assert entry["date_source"] == "pillow"
+    assert entry["original_date"] == "2024-03-15T10:22:01"
+
+
+def test_build_plan_undated_entry_has_no_original_date_key():
+    """Undated entries should omit original_date rather than store None."""
+    selected = [make_selected("/photos/img.jpg")]
+    metadata = {"/photos/img.jpg": make_meta(None)}
+    plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
+    entry = plan["files"]["image"]["unknown"][0]
+    assert "original_date" not in entry
+    assert entry["date_source"] == "none"
+
+
+def test_build_plan_video_type_grouped_separately():
+    """Video files should appear under 'video' type key."""
+    selected = [make_selected("/videos/clip.mp4")]
+    metadata = {"/videos/clip.mp4": make_meta(datetime(2024, 3, 15), file_type="video")}
+    plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
+    assert "video" in plan["files"]
+    assert "image" not in plan["files"]
+
+
+def test_build_plan_multiple_cameras_grouped():
+    """Files from different cameras appear under separate camera keys."""
+    sel_iphone = SelectedFile(
+        hash="h1",
+        best=make_scanned("/photos/a.jpg"),
+        duplicates=[],
+    )
+    sel_canon = SelectedFile(
+        hash="h2",
+        best=make_scanned("/photos/b.jpg"),
+        duplicates=[],
+    )
+    metadata = {
+        "/photos/a.jpg": FileMetadata(original_date=datetime(2024, 1, 1), camera="iPhone",
+                                      dimensions=None, duration=None,
+                                      file_type="image", date_source="pillow"),
+        "/photos/b.jpg": FileMetadata(original_date=datetime(2024, 1, 2), camera="Canon",
+                                      dimensions=None, duration=None,
+                                      file_type="image", date_source="pillow"),
+    }
+    plan = build_plan(sources=[], selected=[sel_iphone, sel_canon],
+                      metadata=metadata, archives=[])
+    assert "iPhone" in plan["files"]["image"]
+    assert "Canon" in plan["files"]["image"]
 
 
 def test_build_plan_with_duplicates():
     selected = [make_selected("/a/img.jpg", ["/b/img.jpg", "/c/img.jpg"])]
     metadata = {"/a/img.jpg": make_meta(datetime(2024, 3, 15))}
     plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
-    assert plan["files"][0]["duplicates"] == ["/b/img.jpg", "/c/img.jpg"]
+    entry = plan["files"]["image"]["unknown"][0]
+    assert entry["duplicates"] == ["/b/img.jpg", "/c/img.jpg"]
 
 
 def test_build_plan_archive_status_fully_covered(tmp_path):
@@ -117,22 +192,25 @@ def test_write_and_read_plan_roundtrip(tmp_path):
 
     assert plan_path.exists()
     loaded = read_plan(str(plan_path))
-    assert loaded["files"][0]["best"] == "/photos/img.jpg"
-    assert loaded["files"][0]["duplicates"] == ["/backup/img.jpg"]
+    entry = loaded["files"]["image"]["unknown"][0]
+    assert entry["best"] == "/photos/img.jpg"
+    assert entry["duplicates"] == ["/backup/img.jpg"]
 
 
-def test_undated_files_go_to_undated_folder(tmp_path):
+def test_undated_files_go_to_undated_folder():
     selected = [make_selected("/photos/img.jpg")]
     metadata = {"/photos/img.jpg": make_meta(None)}
     plan = build_plan(sources=["/photos/**"], selected=selected, metadata=metadata, archives=[])
-    assert plan["files"][0]["best_dest"].startswith("undated/")
+    entry = plan["files"]["image"]["unknown"][0]
+    assert entry["best_dest"].startswith("undated/")
 
 
-def test_unique_sentinel_hash_output_as_unique(tmp_path):
+def test_unique_sentinel_hash_output_as_unique():
     # Unique-size files get sentinel hash "unique:{path}" from hasher
     # The planner should output "unique" not the full sentinel
     f = make_scanned("/photos/img.jpg")
     sel = SelectedFile(hash=f"unique:/photos/img.jpg", best=f, duplicates=[])
     metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15))}
     plan = build_plan(sources=[], selected=[sel], metadata=metadata, archives=[])
-    assert plan["files"][0]["hash"] == "unique"
+    entry = plan["files"]["image"]["unknown"][0]
+    assert entry["hash"] == "unique"

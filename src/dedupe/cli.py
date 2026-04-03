@@ -18,6 +18,7 @@ from .mover import execute_cleanup, execute_move
 from .planner import build_plan, read_plan, write_plan
 from .scanner import scan_dest, scan_sources
 from .selector import select_best
+from .viewer import serve
 
 app = typer.Typer(help="Photo and video deduplication tool.")
 console = Console()
@@ -188,3 +189,15 @@ def cleanup(
 
     if result["warnings"]:
         raise typer.Exit(1)
+
+
+@app.command()
+def view(
+    plan_path: Annotated[str, typer.Option("--plan", help="Path to plan YAML")] = "",
+    port: int = 8421,
+):
+    """Browse plan results in a local web UI."""
+    if not plan_path:
+        console.print("[red]Error: --plan is required[/red]")
+        raise typer.Exit(1)
+    serve(plan_path, port=port)

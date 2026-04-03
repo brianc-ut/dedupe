@@ -105,7 +105,7 @@ def test_move_requires_confirm_for_real_run(tmp_path):
         "sources": [],
         "files": {
             "image": {
-                "unknown": [{"best": str(img), "best_dest": "2024/01/01/photo.jpg", "duplicates": []}]
+                "unknown": [{"best": str(img), "dest": "2024/01/01/photo.jpg", "duplicates": []}]
             }
         },
         "archives": [],

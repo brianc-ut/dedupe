@@ -134,20 +134,19 @@ files:
     Apple iPhone 14 Pro:
       - hash: a3f9...
         best: /photos/vacation/img_001.jpg
-        best_dest: 2023/07/04/img_001.jpg
+        dest: 2023/07/04/img_001.jpg
         original_date: '2023-07-04T14:22:00'
         date_source: exif
         duplicates:
           - /backup/photos/img_001.jpg
-    unknown:
-      - hash: unique
-        best: /photos/misc/scan.jpg
-        best_dest: undated/2015/03/22/scan.jpg
+    4032x3024:
+      - best: /photos/misc/scan.jpg
+        dest: undated/2015/03/22/scan.jpg
   video:
     unknown:
       - hash: b8c2...
         best: /photos/clip.mp4
-        best_dest: 2023/07/05/clip.mp4
+        dest: 2023/07/05/clip.mp4
         original_date: '2023-07-05T09:15:00'
         date_source: hachoir
 archives:
@@ -159,9 +158,12 @@ archives:
 ```
 
 Fields are omitted when not applicable:
+- `hash` is absent for files with a unique size (no SHA-256 needed)
 - `original_date` and `date_source` are absent when no date metadata was found
 - `duplicates` is absent when the file has no duplicates
 - Undated files are placed under `undated/YYYY/MM/DD/` using the file's modification timestamp
+
+Camera grouping for files without a camera tag uses normalized image dimensions (`max(w,h) x min(w,h)`), so portrait and landscape shots from the same device land in the same group. Files with neither camera nor dimensions fall back to `unknown`.
 
 `archive_status` values:
 - `fully_covered` — every media file in the archive has a loose duplicate; the archive is safe to delete manually.

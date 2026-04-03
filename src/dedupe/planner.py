@@ -89,17 +89,21 @@ def build_plan(
                                       existing_dests=existing_dests)
         existing_dests.add(best_dest)
 
-        # Clean up internal sentinel hash used for unique-size files
-        display_hash = sel.hash if not sel.hash.startswith("unique:") else "unique"
-
+        is_unique = sel.hash.startswith("unique:")
         file_type = meta.file_type
-        camera = meta.camera or "unknown"
 
-        entry: dict = {
-            "hash": display_hash,
-            "best": best_path,
-            "best_dest": best_dest,
-        }
+        # Camera grouping: use camera name, or normalized dimensions, or "unknown"
+        if meta.camera:
+            camera = meta.camera
+        elif meta.dimensions:
+            w, h = (int(x) for x in meta.dimensions.split("x"))
+            camera = f"{max(w, h)}x{min(w, h)}"
+        else:
+            camera = "unknown"
+
+        entry: dict = {"best": best_path, "dest": best_dest}
+        if not is_unique:
+            entry["hash"] = sel.hash
         if meta.original_date:
             entry["original_date"] = meta.original_date.isoformat()
         if meta.date_source != "none":

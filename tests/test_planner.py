@@ -17,9 +17,9 @@ def make_selected(best_path: str, dup_paths: list[str] | None = None) -> Selecte
 
 
 def make_meta(original_date: datetime | None = None, file_type: str = "image",
-              camera: str | None = None) -> FileMetadata:
+              camera: str | None = None, dimensions: str | None = None) -> FileMetadata:
     return FileMetadata(
-        original_date=original_date, camera=camera, dimensions=None,
+        original_date=original_date, camera=camera, dimensions=dimensions,
         duration=None, file_type=file_type,
         date_source="pillow" if original_date else "none"
     )
@@ -64,7 +64,7 @@ def test_compute_dest_path_archive_member():
     assert dest == "2024/06/01/photo.jpg"
 
 
-# --- New nested structure tests ---
+# --- Nested structure tests ---
 
 def test_build_plan_files_is_nested_dict():
     """files should be a nested dict: type -> camera -> [entries]"""
@@ -83,16 +83,70 @@ def test_build_plan_files_is_nested_dict():
     entries = plan["files"]["image"]["Apple iPhone 14"]
     assert len(entries) == 1
     assert entries[0]["best"] == "/photos/img.jpg"
-    assert entries[0]["best_dest"] == "2024/03/15/img.jpg"
+    assert entries[0]["dest"] == "2024/03/15/img.jpg"
 
 
-def test_build_plan_no_camera_goes_to_unknown():
-    """Files with no camera metadata are grouped under 'unknown'."""
+def test_build_plan_entry_uses_dest_not_best_dest():
+    """Entry key should be 'dest', not 'best_dest'."""
+    selected = [make_selected("/photos/img.jpg")]
+    metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15))}
+    plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
+    entry = plan["files"]["image"]["unknown"][0]
+    assert "dest" in entry
+    assert "best_dest" not in entry
+
+
+def test_build_plan_no_camera_no_dimensions_uses_unknown():
+    """Files with no camera and no dimensions fall back to 'unknown'."""
     selected = [make_selected("/photos/img.jpg")]
     metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15))}
     plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
     assert "unknown" in plan["files"]["image"]
-    assert len(plan["files"]["image"]["unknown"]) == 1
+
+
+def test_build_plan_no_camera_with_dimensions_uses_normalized_dims():
+    """Files with no camera but known dimensions group by normalized WxH (larger first)."""
+    selected = [make_selected("/photos/img.jpg")]
+    metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15), dimensions="3024x4032")}
+    plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
+    assert "4032x3024" in plan["files"]["image"]
+    assert "unknown" not in plan["files"]["image"]
+
+
+def test_build_plan_portrait_and_landscape_same_group():
+    """Portrait (3024x4032) and landscape (4032x3024) normalize to the same key."""
+    sel_portrait = SelectedFile(hash="h1", best=make_scanned("/a.jpg"), duplicates=[])
+    sel_landscape = SelectedFile(hash="h2", best=make_scanned("/b.jpg"), duplicates=[])
+    metadata = {
+        "/a.jpg": make_meta(datetime(2024, 1, 1), dimensions="3024x4032"),
+        "/b.jpg": make_meta(datetime(2024, 1, 2), dimensions="4032x3024"),
+    }
+    plan = build_plan(sources=[], selected=[sel_portrait, sel_landscape],
+                      metadata=metadata, archives=[])
+    groups = plan["files"]["image"]
+    assert len(groups) == 1
+    assert "4032x3024" in groups
+    assert len(groups["4032x3024"]) == 2
+
+
+def test_build_plan_unique_hash_omitted():
+    """Entries with hash 'unique' should omit the hash key entirely."""
+    f = make_scanned("/photos/img.jpg")
+    sel = SelectedFile(hash="unique:/photos/img.jpg", best=f, duplicates=[])
+    metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15))}
+    plan = build_plan(sources=[], selected=[sel], metadata=metadata, archives=[])
+    entry = plan["files"]["image"]["unknown"][0]
+    assert "hash" not in entry
+
+
+def test_build_plan_real_hash_kept():
+    """Non-unique hashes should be present in the entry."""
+    selected = [make_selected("/photos/img.jpg", ["/backup/img.jpg"])]
+    metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15))}
+    plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
+    entry = plan["files"]["image"]["unknown"][0]
+    assert "hash" in entry
+    assert entry["hash"] == "abc123"
 
 
 def test_build_plan_meta_fields_flattened():
@@ -127,16 +181,8 @@ def test_build_plan_video_type_grouped_separately():
 
 def test_build_plan_multiple_cameras_grouped():
     """Files from different cameras appear under separate camera keys."""
-    sel_iphone = SelectedFile(
-        hash="h1",
-        best=make_scanned("/photos/a.jpg"),
-        duplicates=[],
-    )
-    sel_canon = SelectedFile(
-        hash="h2",
-        best=make_scanned("/photos/b.jpg"),
-        duplicates=[],
-    )
+    sel_iphone = SelectedFile(hash="h1", best=make_scanned("/photos/a.jpg"), duplicates=[])
+    sel_canon = SelectedFile(hash="h2", best=make_scanned("/photos/b.jpg"), duplicates=[])
     metadata = {
         "/photos/a.jpg": FileMetadata(original_date=datetime(2024, 1, 1), camera="iPhone",
                                       dimensions=None, duration=None,
@@ -206,7 +252,7 @@ def test_undated_files_go_to_undated_folder():
     metadata = {"/photos/img.jpg": make_meta(None)}
     plan = build_plan(sources=["/photos/**"], selected=[sel], metadata=metadata, archives=[])
     entry = plan["files"]["image"]["unknown"][0]
-    assert entry["best_dest"] == "undated/2023/06/15/img.jpg"
+    assert entry["dest"] == "undated/2023/06/15/img.jpg"
 
 
 def test_build_plan_date_source_none_omitted():
@@ -225,14 +271,3 @@ def test_build_plan_empty_duplicates_omitted():
     plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
     entry = plan["files"]["image"]["unknown"][0]
     assert "duplicates" not in entry
-
-
-def test_unique_sentinel_hash_output_as_unique():
-    # Unique-size files get sentinel hash "unique:{path}" from hasher
-    # The planner should output "unique" not the full sentinel
-    f = make_scanned("/photos/img.jpg")
-    sel = SelectedFile(hash=f"unique:/photos/img.jpg", best=f, duplicates=[])
-    metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15))}
-    plan = build_plan(sources=[], selected=[sel], metadata=metadata, archives=[])
-    entry = plan["files"]["image"]["unknown"][0]
-    assert entry["hash"] == "unique"

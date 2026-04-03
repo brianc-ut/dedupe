@@ -19,7 +19,7 @@ def make_plan(tmp_path: Path, best_name: str = "img.jpg",
             file_type: {
                 camera: [{
                     "best": str(best),
-                    "best_dest": dest_rel,
+                    "dest": dest_rel,
                     "duplicates": dups,
                 }]
             }
@@ -53,7 +53,7 @@ def test_move_skips_missing_source_with_warning(tmp_path):
             "image": {
                 "unknown": [{
                     "best": str(tmp_path / "nonexistent.jpg"),
-                    "best_dest": "2024/01/01/nonexistent.jpg",
+                    "dest": "2024/01/01/nonexistent.jpg",
                     "duplicates": [],
                 }]
             }
@@ -88,7 +88,7 @@ def test_cleanup_skips_archive_member_duplicates(tmp_path):
             "image": {
                 "unknown": [{
                     "best": str(tmp_path / "img.jpg"),
-                    "best_dest": "2024/01/01/img.jpg",
+                    "dest": "2024/01/01/img.jpg",
                     "duplicates": ["zip:///archive.zip::vacation/img.jpg"],
                 }]
             }
@@ -119,10 +119,10 @@ def test_move_traverses_multiple_type_and_camera_groups(tmp_path):
     plan = {
         "files": {
             "image": {
-                "iPhone": [{"best": str(img1), "best_dest": "2024/01/01/a.jpg", "duplicates": []}],
+                "iPhone": [{"best": str(img1), "dest": "2024/01/01/a.jpg", "duplicates": []}],
             },
             "video": {
-                "unknown": [{"best": str(img2), "best_dest": "2024/01/01/b.mp4", "duplicates": []}],
+                "unknown": [{"best": str(img2), "dest": "2024/01/01/b.mp4", "duplicates": []}],
             },
         },
         "archives": [],

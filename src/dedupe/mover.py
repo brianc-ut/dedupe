@@ -47,7 +47,7 @@ def execute_move(
         if not Path(src).exists():
             warnings.append(f"Warning: source file not found, skipping: {src}")
             continue
-        rel = Path(entry["best_dest"]).name if flatten else entry["best_dest"]
+        rel = Path(entry["dest"]).name if flatten else entry["dest"]
         dst = str(Path(dest) / rel)
         planned.append({"from": src, "to": dst})
         if not dry_run:

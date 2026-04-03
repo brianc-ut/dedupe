@@ -120,7 +120,7 @@ EXIF and video metadata is extracted from the best copy of each group:
 - **Video:** hachoir parses container metadata for creation timestamps.
 - **Fallback:** If no date is found and `exiftool` is installed, it is tried automatically (when `--metadata-provider auto`).
 
-The extracted date drives the destination path under `move`: files are placed at `YYYY/MM/DD/filename.ext`. Files with no extractable date go to `undated/filename.ext`. Use `--flatten` to skip this organization entirely.
+The extracted date drives the destination path under `move`: files are placed at `YYYY/MM/DD/filename.ext`. Files with no extractable date fall back to the file's modification timestamp and are placed at `undated/YYYY/MM/DD/filename.ext`. Use `--flatten` to skip all subdirectory organization.
 
 ### The plan file
 
@@ -142,9 +142,7 @@ files:
     unknown:
       - hash: unique
         best: /photos/misc/scan.jpg
-        best_dest: undated/scan.jpg
-        date_source: none
-        duplicates: []
+        best_dest: undated/2015/03/22/scan.jpg
   video:
     unknown:
       - hash: b8c2...
@@ -152,7 +150,6 @@ files:
         best_dest: 2023/07/05/clip.mp4
         original_date: '2023-07-05T09:15:00'
         date_source: hachoir
-        duplicates: []
 archives:
   - path: /photos/old_backup.zip
     type: zip
@@ -160,6 +157,11 @@ archives:
     contained_files: 12
     uncovered_files: []
 ```
+
+Fields are omitted when not applicable:
+- `original_date` and `date_source` are absent when no date metadata was found
+- `duplicates` is absent when the file has no duplicates
+- Undated files are placed under `undated/YYYY/MM/DD/` using the file's modification timestamp
 
 `archive_status` values:
 - `fully_covered` — every media file in the archive has a loose duplicate; the archive is safe to delete manually.

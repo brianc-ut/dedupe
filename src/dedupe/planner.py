@@ -23,7 +23,8 @@ def compute_dest_path(
         d = metadata.original_date
         base = f"{d.year:04d}/{d.month:02d}/{d.day:02d}/{filename}"
     else:
-        base = f"undated/{filename}"
+        d = datetime.fromtimestamp(scanned_file.mtime)
+        base = f"undated/{d.year:04d}/{d.month:02d}/{d.day:02d}/{filename}"
 
     if existing_dests is None or base not in existing_dests:
         return base
@@ -98,15 +99,17 @@ def build_plan(
             "hash": display_hash,
             "best": best_path,
             "best_dest": best_dest,
-            "date_source": meta.date_source,
-            "duplicates": [d.path for d in sel.duplicates],
         }
         if meta.original_date:
             entry["original_date"] = meta.original_date.isoformat()
+        if meta.date_source != "none":
+            entry["date_source"] = meta.date_source
         if meta.dimensions:
             entry["dimensions"] = meta.dimensions
         if meta.duration is not None:
             entry["duration"] = meta.duration
+        if sel.duplicates:
+            entry["duplicates"] = [d.path for d in sel.duplicates]
 
         files_by_type_camera.setdefault(file_type, {}).setdefault(camera, []).append(entry)
 

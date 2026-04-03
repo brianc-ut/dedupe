@@ -32,11 +32,12 @@ def test_compute_dest_path_with_date():
     assert dest == "2024/03/15/IMG.jpg"
 
 
-def test_compute_dest_path_undated():
-    f = make_scanned("/photos/IMG.jpg")
+def test_compute_dest_path_undated_uses_mtime_for_subdir():
+    mtime = datetime(2023, 6, 15).timestamp()
+    f = make_scanned("/photos/IMG.jpg", mtime=mtime)
     m = make_meta(None)
     dest = compute_dest_path(f, m)
-    assert dest == "undated/IMG.jpg"
+    assert dest == "undated/2023/06/15/IMG.jpg"
 
 
 def test_compute_dest_path_flatten():
@@ -106,13 +107,13 @@ def test_build_plan_meta_fields_flattened():
 
 
 def test_build_plan_undated_entry_has_no_original_date_key():
-    """Undated entries should omit original_date rather than store None."""
+    """Undated entries should omit both original_date and date_source."""
     selected = [make_selected("/photos/img.jpg")]
     metadata = {"/photos/img.jpg": make_meta(None)}
     plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
     entry = plan["files"]["image"]["unknown"][0]
     assert "original_date" not in entry
-    assert entry["date_source"] == "none"
+    assert "date_source" not in entry
 
 
 def test_build_plan_video_type_grouped_separately():
@@ -198,11 +199,32 @@ def test_write_and_read_plan_roundtrip(tmp_path):
 
 
 def test_undated_files_go_to_undated_folder():
+    mtime = datetime(2023, 6, 15).timestamp()
+    f = ScannedFile(path="/photos/img.jpg", size=100, mtime=mtime,
+                    source_index=0, is_archive_member=False, archive_path=None)
+    sel = SelectedFile(hash="abc123", best=f, duplicates=[])
+    metadata = {"/photos/img.jpg": make_meta(None)}
+    plan = build_plan(sources=["/photos/**"], selected=[sel], metadata=metadata, archives=[])
+    entry = plan["files"]["image"]["unknown"][0]
+    assert entry["best_dest"] == "undated/2023/06/15/img.jpg"
+
+
+def test_build_plan_date_source_none_omitted():
+    """date_source should be omitted from entry when no date was found."""
     selected = [make_selected("/photos/img.jpg")]
     metadata = {"/photos/img.jpg": make_meta(None)}
-    plan = build_plan(sources=["/photos/**"], selected=selected, metadata=metadata, archives=[])
+    plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
     entry = plan["files"]["image"]["unknown"][0]
-    assert entry["best_dest"].startswith("undated/")
+    assert "date_source" not in entry
+
+
+def test_build_plan_empty_duplicates_omitted():
+    """duplicates key should be absent when there are no duplicates."""
+    selected = [make_selected("/photos/img.jpg")]
+    metadata = {"/photos/img.jpg": make_meta(datetime(2024, 3, 15))}
+    plan = build_plan(sources=[], selected=selected, metadata=metadata, archives=[])
+    entry = plan["files"]["image"]["unknown"][0]
+    assert "duplicates" not in entry
 
 
 def test_unique_sentinel_hash_output_as_unique():

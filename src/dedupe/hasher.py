@@ -3,6 +3,7 @@ import zipfile
 import tarfile
 from collections import defaultdict
 from pathlib import Path
+from typing import Callable
 
 from .models import ScannedFile, DuplicateGroup
 
@@ -34,7 +35,10 @@ def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def group_by_hash(files: list[ScannedFile]) -> list[DuplicateGroup]:
+def group_by_hash(
+    files: list[ScannedFile],
+    progress_callback: Callable[[ScannedFile], None] | None = None,
+) -> list[DuplicateGroup]:
     """Group files by content hash. Only hashes files sharing the same size."""
     if not files:
         return []
@@ -48,13 +52,17 @@ def group_by_hash(files: list[ScannedFile]) -> list[DuplicateGroup]:
     by_hash: dict[str, list[ScannedFile]] = defaultdict(list)
     for size, size_group in by_size.items():
         if len(size_group) == 1:
-            # Unique size — assign a unique sentinel so it still appears in output
-            sentinel = f"unique:{size_group[0].path}"
-            by_hash[sentinel].append(size_group[0])
+            f = size_group[0]
+            sentinel = f"unique:{f.path}"
+            by_hash[sentinel].append(f)
+            if progress_callback:
+                progress_callback(f)
         else:
             for f in size_group:
                 content = _read_content(f)
                 h = _sha256(content)
                 by_hash[h].append(f)
+                if progress_callback:
+                    progress_callback(f)
 
     return [DuplicateGroup(hash=h, files=group) for h, group in by_hash.items()]

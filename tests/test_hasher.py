@@ -55,6 +55,23 @@ def test_empty_input_returns_empty(tmp_path):
     assert groups == []
 
 
+def test_group_by_hash_calls_progress_for_every_file(tmp_path):
+    """progress_callback should be called once per file."""
+    f1 = make_file("a.jpg", b"aaa", tmp_path)
+    f2 = make_file("b.jpg", b"bbbb", tmp_path)
+    f3 = make_file("c.jpg", b"aaa", tmp_path)  # duplicate of f1
+    seen = []
+    group_by_hash([f1, f2, f3], progress_callback=seen.append)
+    assert len(seen) == 3
+
+
+def test_group_by_hash_progress_callback_optional(tmp_path):
+    """group_by_hash should work fine with no progress_callback."""
+    f1 = make_file("a.jpg", b"aaa", tmp_path)
+    groups = group_by_hash([f1])
+    assert len(groups) == 1
+
+
 def test_archive_member_hashed_correctly(tmp_path):
     # Create a zip with a known-content file
     content = b"archive member content"

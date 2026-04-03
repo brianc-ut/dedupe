@@ -3,9 +3,17 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    MofNCompleteColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 from .hasher import group_by_hash
-from .metadata import extract_metadata
+from .metadata import extract_metadata_batch
 from .mover import execute_cleanup, execute_move
 from .planner import build_plan, read_plan, write_plan
 from .scanner import scan_sources
@@ -13,6 +21,10 @@ from .selector import select_best
 
 app = typer.Typer(help="Photo and video deduplication tool.")
 console = Console()
+
+
+def _progress(*columns, **kwargs) -> Progress:
+    return Progress(*columns, console=console, **kwargs)
 
 
 @app.command()
@@ -30,25 +42,41 @@ def plan(
         console.print("[red]Error: --output is required[/red]")
         raise typer.Exit(1)
 
-    console.print(f"[bold]Scanning {len(source)} source(s)...[/bold]")
-    files, archives, warnings = scan_sources(source, include_hidden=include_hidden)
+    # Stage 1: Scan
+    with _progress(SpinnerColumn(), TextColumn("{task.description}"),
+                   TimeElapsedColumn(), transient=True) as progress:
+        task = progress.add_task("Scanning sources...", total=None)
+        files, archives, warnings = scan_sources(source, include_hidden=include_hidden)
+        progress.update(task, description=f"Scanned — {len(files)} media files, {len(archives)} archives")
 
     for w in warnings:
         console.print(f"[yellow]{w}[/yellow]")
-
     console.print(f"Found [bold]{len(files)}[/bold] media files, [bold]{len(archives)}[/bold] archives")
 
-    console.print("Grouping by hash...")
-    groups = group_by_hash(files)
+    # Stage 2: Hash
+    with _progress(SpinnerColumn(), TextColumn("{task.description}"),
+                   BarColumn(), MofNCompleteColumn(),
+                   TimeElapsedColumn(), transient=True) as progress:
+        task = progress.add_task("Hashing files...", total=len(files))
+        groups = group_by_hash(
+            files,
+            progress_callback=lambda _: progress.advance(task),
+        )
     selected = [select_best(g) for g in groups]
-
     dup_count = sum(1 for s in selected if s.duplicates)
     console.print(f"Found [bold]{dup_count}[/bold] duplicate groups")
 
-    console.print("Extracting metadata...")
-    metadata = {}
-    for sel in selected:
-        metadata[sel.best.path] = extract_metadata(sel.best.path, provider=metadata_provider)
+    # Stage 3: Metadata (parallel Python + single batch exiftool)
+    best_paths = [sel.best.path for sel in selected]
+    with _progress(SpinnerColumn(), TextColumn("{task.description}"),
+                   BarColumn(), MofNCompleteColumn(),
+                   TimeElapsedColumn(), transient=True) as progress:
+        task = progress.add_task("Extracting metadata...", total=len(best_paths))
+        metadata = extract_metadata_batch(
+            best_paths,
+            provider=metadata_provider,
+            progress_callback=lambda _: progress.advance(task),
+        )
 
     plan_data = build_plan(sources=source, selected=selected,
                            metadata=metadata, archives=archives)

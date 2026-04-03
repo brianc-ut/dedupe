@@ -118,7 +118,8 @@ EXIF and video metadata is extracted from the best copy of each group:
 
 - **Images:** Pillow reads standard EXIF tags (DateTimeOriginal, DateTime, GPS).
 - **Video:** hachoir parses container metadata for creation timestamps.
-- **Fallback:** If no date is found and `exiftool` is installed, it is tried automatically (when `--metadata-provider auto`).
+- **Fallback:** exiftool is tried only when the Python reader got no structural metadata at all — an image Pillow couldn't open (no dimensions), or a video hachoir couldn't parse (no duration, no date). Files Pillow opened successfully but without a date tag skip exiftool entirely. When the fallback is needed, all qualifying files are passed to exiftool in a single batch subprocess call.
+- **Parallelism:** Python extraction runs concurrently across up to 8 worker threads.
 
 The extracted date drives the destination path under `move`: files are placed at `YYYY/MM/DD/filename.ext`. Files with no extractable date fall back to the file's modification timestamp and are placed at `undated/YYYY/MM/DD/filename.ext`. Use `--flatten` to skip all subdirectory organization.
 

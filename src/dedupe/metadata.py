@@ -88,6 +88,7 @@ def _extract_pillow(path: str) -> FileMetadata:
 
 def _extract_hachoir(path: str) -> FileMetadata:
     """Extract metadata from a video file using hachoir."""
+    import logging
     from hachoir.parser import createParser
     from hachoir.metadata import extractMetadata
 
@@ -97,6 +98,7 @@ def _extract_hachoir(path: str) -> FileMetadata:
         return FileMetadata(original_date=None, camera=None, dimensions=None,
                             duration=None, file_type=file_type, date_source="none")
     try:
+        logging.getLogger("hachoir").setLevel(logging.CRITICAL)
         parser = createParser(path)
         if not parser:
             return FileMetadata(original_date=None, camera=None, dimensions=None,

@@ -167,6 +167,12 @@ def test_filename_date_parsed_when_no_exif(tmp_path):
     assert _parse_filename_date("IMG_20180311_162025257.jpg") == datetime(2018, 3, 11, 16, 20, 25)
 
 
+def test_filename_date_dash_separated_format():
+    from dedupe.metadata import _parse_filename_date
+    assert _parse_filename_date("2023-09-09_09-23-40_832.heic") == datetime(2023, 9, 9, 9, 23, 40)
+    assert _parse_filename_date("2023-09-09_09-23-40.jpg") == datetime(2023, 9, 9, 9, 23, 40)
+
+
 def test_filename_date_ignores_non_matching(tmp_path):
     from dedupe.metadata import _parse_filename_date
     assert _parse_filename_date("photo.jpg") is None

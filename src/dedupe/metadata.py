@@ -63,22 +63,28 @@ def _parse_exif_date(date_str: str) -> datetime | None:
         return None
 
 
-# Matches Android camera filenames: IMG_YYYYMMDD_HHMMSS[mmm][_suffix]
-_FILENAME_DATE_RE = re.compile(r'IMG_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\d*')
+# Supported filename date patterns, tried in order:
+#   IMG_YYYYMMDD_HHMMSS[mmm]      — Android camera (e.g. IMG_20180311_162025257.jpg)
+#   YYYY-MM-DD_HH-MM-SS[_mmm]     — dash-separated (e.g. 2023-09-09_09-23-40_832.heic)
+_FILENAME_DATE_PATTERNS = [
+    re.compile(r'IMG_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\d*'),
+    re.compile(r'(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})(?:_\d+)?'),
+]
 
 
 def _parse_filename_date(path: str) -> datetime | None:
-    """Extract datetime from Android-style filename (IMG_YYYYMMDD_HHMMSS...). Returns None if no match."""
+    """Extract datetime from a recognized filename date pattern. Returns None if no match."""
     raw = path.split("::")[-1] if "::" in path else path
     stem = Path(raw).stem
-    m = _FILENAME_DATE_RE.search(stem)
-    if not m:
-        return None
-    try:
-        y, mo, d, h, mi, s = (int(x) for x in m.groups())
-        return datetime(y, mo, d, h, mi, s)
-    except ValueError:
-        return None
+    for pattern in _FILENAME_DATE_PATTERNS:
+        m = pattern.search(stem)
+        if m:
+            try:
+                y, mo, d, h, mi, s = (int(x) for x in m.groups())
+                return datetime(y, mo, d, h, mi, s)
+            except ValueError:
+                continue
+    return None
 
 
 def _apply_filename_date(result: FileMetadata, path: str) -> FileMetadata:

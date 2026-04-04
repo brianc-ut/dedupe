@@ -24,6 +24,7 @@ _HTML = """\
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dedupe Plan Viewer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -160,6 +161,14 @@ body {
 .path-item.source { color: #6ab06a; border-left: 2px solid #2a5a2a; }
 .path-item.done   { color: #3a8;    border-left: 2px solid #1a5a3a; }
 .path-item.dup    { color: #666;    border-left: 2px solid #2a2a2a; }
+#map-thumb {
+  width: 100%;
+  height: 160px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 4px;
+  display: none;
+}
 #stats-bar {
   background: #0d0d0d;
   border-top: 1px solid #1e1e1e;
@@ -190,6 +199,7 @@ body {
         <div id="no-preview"></div>
       </div>
       <div id="meta-panel">
+        <div id="map-thumb"></div>
         <div class="meta-filename" id="mf"></div>
         <div class="meta-dest" id="md"></div>
         <div id="mbadge"></div>
@@ -206,9 +216,34 @@ body {
   <span class="stat">Already at dest: <span id="s-done">&ndash;</span></span>
   <span class="stat">Duplicates: <span id="s-dups">&ndash;</span></span>
 </div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 let allEntries = [];
 let selectedDest = null;
+let _map = null;
+let _marker = null;
+
+function showMap(lat, lon) {
+  const el = document.getElementById('map-thumb');
+  el.style.display = 'block';
+  if (!_map) {
+    _map = L.map('map-thumb', { zoomControl: true, attributionControl: true });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '\u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(_map);
+    _marker = L.marker([lat, lon]).addTo(_map);
+  } else {
+    _marker.setLatLng([lat, lon]);
+  }
+  _map.setView([lat, lon], 14);
+  // Leaflet needs a nudge after the panel becomes visible
+  setTimeout(() => _map.invalidateSize(), 50);
+}
+
+function hideMap() {
+  document.getElementById('map-thumb').style.display = 'none';
+}
 
 async function init() {
   const data = await fetch('/api/plan').then(r => r.json());
@@ -306,6 +341,10 @@ function showDetail(e) {
   document.getElementById('mbadge').innerHTML = e.already_at_dest
     ? '<div class="badge-done">\u2713 Already at destination</div>' : '';
 
+  // Map
+  if (e.latitude != null && e.longitude != null) showMap(e.latitude, e.longitude);
+  else hideMap();
+
   // Preview
   const img = document.getElementById('preview');
   const vid = document.getElementById('video-preview');
@@ -349,7 +388,7 @@ function showDetail(e) {
   if (e.latitude != null && e.longitude != null) {
     const lat = e.latitude.toFixed(5), lon = e.longitude.toFixed(5);
     const url = 'https://maps.apple.com/?ll=' + lat + ',' + lon + '&q=Photo';
-    mf.innerHTML += '<div class="meta-row"><span class="meta-key">Location</span>'
+    mf.innerHTML += '<div class="meta-row"><span class="meta-key">GPS</span>'
       + '<span class="meta-val mono"><a href="' + url + '" target="_blank" style="color:#4a9;text-decoration:none">'
       + lat + ', ' + lon + ' \u2197</a></span></div>';
   }

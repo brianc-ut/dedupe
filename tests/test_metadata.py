@@ -157,3 +157,36 @@ def test_extract_metadata_batch_correct_dates(tmp_path):
 
 def test_extract_metadata_batch_empty_input():
     assert extract_metadata_batch([]) == {}
+
+
+# --- Filename date fallback tests ---
+
+def test_filename_date_parsed_when_no_exif(tmp_path):
+    """IMG_YYYYMMDD_HHMMSS filename yields date when no EXIF date present."""
+    from dedupe.metadata import _parse_filename_date
+    assert _parse_filename_date("IMG_20180311_162025257.jpg") == datetime(2018, 3, 11, 16, 20, 25)
+
+
+def test_filename_date_ignores_non_matching(tmp_path):
+    from dedupe.metadata import _parse_filename_date
+    assert _parse_filename_date("photo.jpg") is None
+    assert _parse_filename_date("IMG_abc_def.jpg") is None
+
+
+def test_filename_date_used_when_no_exif(tmp_path):
+    """extract_metadata falls back to filename date for undated IMG_ files."""
+    f = tmp_path / "IMG_20180311_162025257.jpg"
+    f.write_bytes(make_jpeg_no_exif(tmp_path, "tmp.jpg").read_bytes())
+    f = tmp_path / "IMG_20180311_162025257.jpg"
+    make_jpeg_no_exif(tmp_path, "IMG_20180311_162025257.jpg")
+    result = extract_metadata(str(tmp_path / "IMG_20180311_162025257.jpg"), provider="python")
+    assert result.original_date == datetime(2018, 3, 11, 16, 20, 25)
+    assert result.date_source == "filename"
+
+
+def test_filename_date_not_used_when_exif_present(tmp_path):
+    """EXIF date takes precedence over filename date."""
+    make_jpeg_with_exif(tmp_path, "IMG_20180311_162025257.jpg", date_str="2024:06:01 08:00:00")
+    result = extract_metadata(str(tmp_path / "IMG_20180311_162025257.jpg"), provider="python")
+    assert result.original_date == datetime(2024, 6, 1, 8, 0, 0)
+    assert result.date_source == "pillow"

@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -60,6 +61,43 @@ def _parse_exif_date(date_str: str) -> datetime | None:
         return datetime.strptime(date_str, "%Y:%m:%d %H:%M:%S")
     except (ValueError, TypeError):
         return None
+
+
+# Matches Android camera filenames: IMG_YYYYMMDD_HHMMSS[mmm][_suffix]
+_FILENAME_DATE_RE = re.compile(r'IMG_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\d*')
+
+
+def _parse_filename_date(path: str) -> datetime | None:
+    """Extract datetime from Android-style filename (IMG_YYYYMMDD_HHMMSS...). Returns None if no match."""
+    raw = path.split("::")[-1] if "::" in path else path
+    stem = Path(raw).stem
+    m = _FILENAME_DATE_RE.search(stem)
+    if not m:
+        return None
+    try:
+        y, mo, d, h, mi, s = (int(x) for x in m.groups())
+        return datetime(y, mo, d, h, mi, s)
+    except ValueError:
+        return None
+
+
+def _apply_filename_date(result: FileMetadata, path: str) -> FileMetadata:
+    """If result has no date, try to parse one from the filename."""
+    if result.original_date is not None:
+        return result
+    dt = _parse_filename_date(path)
+    if dt is None:
+        return result
+    return FileMetadata(
+        original_date=dt,
+        camera=result.camera,
+        dimensions=result.dimensions,
+        duration=result.duration,
+        file_type=result.file_type,
+        date_source="filename",
+        latitude=result.latitude,
+        longitude=result.longitude,
+    )
 
 
 def _needs_exiftool_fallback(result: FileMetadata) -> bool:
@@ -268,9 +306,9 @@ def extract_metadata(path: str, provider: str = "auto") -> FileMetadata:
         exiftool_results = _extract_exiftool_batch([path])
         exiftool_result = exiftool_results.get(path)
         if exiftool_result and exiftool_result.original_date is not None:
-            return exiftool_result
+            return _apply_filename_date(exiftool_result, path)
 
-    return result
+    return _apply_filename_date(result, path)
 
 
 def extract_metadata_batch(
@@ -321,5 +359,9 @@ def extract_metadata_batch(
         for path, exif_meta in exiftool_results.items():
             if exif_meta.original_date is not None:
                 results[path] = exif_meta
+
+    # Step 3: filename date fallback for anything still undated
+    for path in paths:
+        results[path] = _apply_filename_date(results[path], path)
 
     return results

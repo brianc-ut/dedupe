@@ -43,3 +43,5 @@ class FileMetadata:
     duration: float | None      # seconds for video
     file_type: str              # "image" or "video"
     date_source: str            # "pillow", "hachoir", "exiftool", "none"
+    latitude: float | None = None
+    longitude: float | None = None

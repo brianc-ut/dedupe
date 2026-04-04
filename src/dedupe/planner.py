@@ -119,6 +119,9 @@ def build_plan(
                 entry["dimensions"] = meta.dimensions
             if meta.duration is not None:
                 entry["duration"] = meta.duration
+            if meta.latitude is not None and meta.longitude is not None:
+                entry["latitude"] = round(meta.latitude, 6)
+                entry["longitude"] = round(meta.longitude, 6)
             if source_duplicates:
                 entry["duplicates"] = [d.path for d in source_duplicates]
         else:
@@ -145,6 +148,9 @@ def build_plan(
                 entry["dimensions"] = meta.dimensions
             if meta.duration is not None:
                 entry["duration"] = meta.duration
+            if meta.latitude is not None and meta.longitude is not None:
+                entry["latitude"] = round(meta.latitude, 6)
+                entry["longitude"] = round(meta.longitude, 6)
             if source_duplicates:
                 entry["duplicates"] = [d.path for d in source_duplicates]
 

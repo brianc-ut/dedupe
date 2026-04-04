@@ -2,6 +2,9 @@
 
 import json
 import mimetypes
+import os
+import subprocess
+import tempfile
 import threading
 import urllib.parse
 import webbrowser
@@ -343,6 +346,13 @@ function showDetail(e) {
     row('Date', e.original_date.replace('T',' ') + (e.date_source ? ' (' + e.date_source + ')' : ''));
   }
   if (e.hash) row('Hash', e.hash.substring(0, 16) + '\u2026', true);
+  if (e.latitude != null && e.longitude != null) {
+    const lat = e.latitude.toFixed(5), lon = e.longitude.toFixed(5);
+    const url = 'https://maps.apple.com/?ll=' + lat + ',' + lon + '&q=Photo';
+    mf.innerHTML += '<div class="meta-row"><span class="meta-key">Location</span>'
+      + '<span class="meta-val mono"><a href="' + url + '" target="_blank" style="color:#4a9;text-decoration:none">'
+      + lat + ', ' + lon + ' \u2197</a></span></div>';
+  }
 
   // Sources
   const ms = document.getElementById('msources');
@@ -386,6 +396,29 @@ def _flatten_entries(plan: dict) -> list[dict]:
     return entries
 
 
+def _heic_to_jpeg(path: str) -> bytes | None:
+    """Convert HEIC to JPEG in memory using sips. Original file is never modified."""
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+            tmp_path = tmp.name
+        result = subprocess.run(
+            ['sips', '-s', 'format', 'jpeg', path, '--out', tmp_path],
+            capture_output=True, timeout=15,
+        )
+        if result.returncode == 0:
+            return Path(tmp_path).read_bytes()
+    except Exception:
+        pass
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    return None
+
+
 def serve(plan_path: str, port: int = 8421) -> None:
     plan = read_plan(plan_path)
     entries = _flatten_entries(plan)
@@ -418,6 +451,13 @@ def serve(plan_path: str, port: int = 8421) -> None:
             p = Path(path)
             if not p.exists() or not p.is_file() or p.suffix.lower() not in MEDIA_EXTENSIONS:
                 self.send_error(404)
+                return
+            if p.suffix.lower() in {'.heic', '.heif'}:
+                data = _heic_to_jpeg(path)
+                if data:
+                    self._send(data, "image/jpeg")
+                    return
+                self.send_error(415)
                 return
             mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
             data = p.read_bytes()

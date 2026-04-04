@@ -15,6 +15,35 @@ EXIF_DATE_ORIGINAL = 36867  # DateTimeOriginal tag
 EXIF_DATE_DIGITIZED = 36868
 EXIF_MAKE = 271
 EXIF_MODEL = 272
+EXIF_GPS_IFD = 34853       # GPS info IFD pointer
+
+
+def _gps_rational(val) -> float:
+    """Convert a Pillow GPS rational value (IFDRational or (num, den) tuple) to float."""
+    if hasattr(val, 'numerator'):
+        return float(val.numerator) / float(val.denominator) if val.denominator else 0.0
+    if isinstance(val, tuple) and len(val) == 2:
+        return float(val[0]) / float(val[1]) if val[1] else 0.0
+    return float(val)
+
+
+def _parse_gps_ifd(gps: dict) -> tuple[float | None, float | None]:
+    """Extract decimal lat/lon from a Pillow GPS IFD dict. Returns (lat, lon) or (None, None)."""
+    try:
+        lat_vals = gps.get(2)  # GPSLatitude: (deg, min, sec)
+        lat_ref  = gps.get(1, 'N')
+        lon_vals = gps.get(4)  # GPSLongitude
+        lon_ref  = gps.get(3, 'E')
+        if not lat_vals or not lon_vals or len(lat_vals) < 3 or len(lon_vals) < 3:
+            return None, None
+
+        def to_dec(vals, ref):
+            d = _gps_rational(vals[0]) + _gps_rational(vals[1]) / 60.0 + _gps_rational(vals[2]) / 3600.0
+            return -d if ref in ('S', 'W') else d
+
+        return to_dec(lat_vals, lat_ref), to_dec(lon_vals, lon_ref)
+    except Exception:
+        return None, None
 
 
 def _file_type(path: str) -> str:
@@ -73,6 +102,8 @@ def _extract_pillow(path: str) -> FileMetadata:
             model = exif.get(EXIF_MODEL, "")
             camera = f"{make} {model}".strip() or None
 
+            lat, lon = _parse_gps_ifd(exif.get_ifd(EXIF_GPS_IFD))
+
             return FileMetadata(
                 original_date=original_date,
                 camera=camera,
@@ -80,6 +111,8 @@ def _extract_pillow(path: str) -> FileMetadata:
                 duration=None,
                 file_type=file_type,
                 date_source="pillow" if original_date else "none",
+                latitude=lat,
+                longitude=lon,
             )
     except Exception:
         return FileMetadata(original_date=None, camera=None, dimensions=None,
@@ -164,7 +197,9 @@ def _extract_exiftool_batch(paths: list[str]) -> dict[str, FileMetadata]:
     try:
         result = subprocess.run(
             ["exiftool", "-DateTimeOriginal", "-Make", "-Model",
-             "-ImageWidth", "-ImageHeight", "-Duration", "-j", "-q"] + paths,
+             "-ImageWidth", "-ImageHeight", "-Duration",
+             "-GPSLatitude#", "-GPSLongitude#",
+             "-j", "-q"] + paths,
             capture_output=True, text=True, timeout=120,
         )
         data = json.loads(result.stdout)
@@ -185,6 +220,11 @@ def _extract_exiftool_batch(paths: list[str]) -> dict[str, FileMetadata]:
         w = d.get("ImageWidth")
         h = d.get("ImageHeight")
         dimensions = f"{w}x{h}" if w and h else None
+        try:
+            lat = float(d["GPSLatitude"]) if d.get("GPSLatitude") is not None else None
+            lon = float(d["GPSLongitude"]) if d.get("GPSLongitude") is not None else None
+        except (TypeError, ValueError):
+            lat, lon = None, None
         results[source_file] = FileMetadata(
             original_date=original_date,
             camera=camera,
@@ -192,6 +232,8 @@ def _extract_exiftool_batch(paths: list[str]) -> dict[str, FileMetadata]:
             duration=_parse_exiftool_duration(d.get("Duration")),
             file_type=file_type,
             date_source="exiftool" if original_date else "none",
+            latitude=lat,
+            longitude=lon,
         )
     return results
 

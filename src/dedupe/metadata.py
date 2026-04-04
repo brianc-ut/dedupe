@@ -64,11 +64,14 @@ def _parse_exif_date(date_str: str) -> datetime | None:
 
 
 # Supported filename date patterns, tried in order:
-#   IMG_YYYYMMDD_HHMMSS[mmm]      — Android camera (e.g. IMG_20180311_162025257.jpg)
-#   YYYY-MM-DD_HH-MM-SS[_mmm]     — dash-separated (e.g. 2023-09-09_09-23-40_832.heic)
+#   IMG_/VID_YYYYMMDD_HHMMSS[mmm]     — Android camera/video (e.g. IMG_20180311_162025257.jpg)
+#   YYYY-MM-DD_HH-MM-SS[_mmm]         — dash-separated (e.g. 2023-09-09_09-23-40_832.heic)
+#   YYYY-MM-DDTHH_MM_SS[.mmm]         — ISO-like with underscores (e.g. 2021-04-11T21_02_23.208)
+#   13-digit Unix ms timestamp         — pure numeric stem (e.g. 1602495200497)
 _FILENAME_DATE_PATTERNS = [
-    re.compile(r'IMG_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\d*'),
+    re.compile(r'(?:IMG|VID)_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\d*'),
     re.compile(r'(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})(?:_\d+)?'),
+    re.compile(r'(\d{4})-(\d{2})-(\d{2})T(\d{2})_(\d{2})_(\d{2})(?:\.\d+)?'),
 ]
 
 
@@ -76,6 +79,16 @@ def _parse_filename_date(path: str) -> datetime | None:
     """Extract datetime from a recognized filename date pattern. Returns None if no match."""
     raw = path.split("::")[-1] if "::" in path else path
     stem = Path(raw).stem
+
+    # 13-digit Unix ms timestamp (pure numeric filename)
+    if re.fullmatch(r'\d{13}', stem):
+        try:
+            dt = datetime.fromtimestamp(int(stem) / 1000)
+            if 2000 <= dt.year <= 2100:
+                return dt
+        except (ValueError, OSError):
+            pass
+
     for pattern in _FILENAME_DATE_PATTERNS:
         m = pattern.search(stem)
         if m:

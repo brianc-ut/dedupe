@@ -173,6 +173,31 @@ def test_filename_date_dash_separated_format():
     assert _parse_filename_date("2023-09-09_09-23-40.jpg") == datetime(2023, 9, 9, 9, 23, 40)
 
 
+def test_filename_date_vid_prefix():
+    from dedupe.metadata import _parse_filename_date
+    assert _parse_filename_date("VID_20191105_192203172.mp4") == datetime(2019, 11, 5, 19, 22, 3)
+
+
+def test_filename_date_iso_with_underscores():
+    from dedupe.metadata import _parse_filename_date
+    # e.g. "nathanstroller (2021-04-11T21_02_23.208).jpg"
+    assert _parse_filename_date("nathanstroller (2021-04-11T21_02_23.208).jpg") == datetime(2021, 4, 11, 21, 2, 23)
+
+
+def test_filename_date_unix_ms_timestamp():
+    from dedupe.metadata import _parse_filename_date
+    # 1602495200497 ms = 2020-10-12
+    result = _parse_filename_date("1602495200497.jpg")
+    assert result is not None
+    assert result.year == 2020 and result.month == 10
+
+
+def test_filename_date_unix_ms_rejects_short_numbers():
+    from dedupe.metadata import _parse_filename_date
+    assert _parse_filename_date("115.jpg") is None
+    assert _parse_filename_date("12345.jpg") is None
+
+
 def test_filename_date_ignores_non_matching(tmp_path):
     from dedupe.metadata import _parse_filename_date
     assert _parse_filename_date("photo.jpg") is None

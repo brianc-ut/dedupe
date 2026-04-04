@@ -64,12 +64,21 @@ body {
 #layout { display: flex; flex: 1; overflow: hidden; }
 #sidebar {
   width: 260px;
+  min-width: 140px;
+  max-width: 600px;
   flex-shrink: 0;
   background: #161616;
-  border-right: 1px solid #222;
   overflow-y: auto;
   padding: 6px 0;
 }
+#resize-handle {
+  width: 4px;
+  flex-shrink: 0;
+  background: #222;
+  cursor: col-resize;
+  transition: background 0.15s;
+}
+#resize-handle:hover, #resize-handle.dragging { background: #446; }
 .tree-node { user-select: none; }
 .tree-folder {
   display: flex;
@@ -103,6 +112,9 @@ body {
 .tree-file.selected { background: #1e2d1e; color: #6ab06a; }
 .tree-file .file-icon { font-size: 11px; }
 .tree-file .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-file.has-dups .fname { color: #ccc; font-weight: 600; }
+.tree-file.unique .fname { color: #555; font-weight: 400; }
+.dup-count { font-size: 10px; color: #667; margin-left: 2px; }
 .done-badge { font-size: 10px; color: #3a8; }
 #content { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #0e0e0e; }
 #welcome { flex: 1; display: flex; align-items: center; justify-content: center; color: #333; font-size: 14px; }
@@ -190,6 +202,7 @@ body {
 </div>
 <div id="layout">
   <div id="sidebar"><div id="tree"></div></div>
+  <div id="resize-handle"></div>
   <div id="content">
     <div id="welcome">&larr; Select a file from the tree</div>
     <div id="detail" style="display:none">
@@ -222,6 +235,29 @@ let allEntries = [];
 let selectedDest = null;
 let _map = null;
 let _marker = null;
+
+// Sidebar resize
+(function() {
+  const handle = document.getElementById('resize-handle');
+  const sidebar = document.getElementById('sidebar');
+  let dragging = false, startX = 0, startW = 0;
+  handle.addEventListener('mousedown', e => {
+    dragging = true; startX = e.clientX; startW = sidebar.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cssText += ';cursor:col-resize;user-select:none';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    sidebar.style.width = Math.max(140, Math.min(600, startW + e.clientX - startX)) + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
 
 function showMap(lat, lon) {
   const el = document.getElementById('map-thumb');
@@ -310,14 +346,17 @@ function renderNode(node, container, depth) {
   }
   for (const entry of node._files) {
     const filename = entry.dest.split('/').pop();
+    const dupCount = entry.duplicates ? entry.duplicates.length : 0;
+    const hasDups = dupCount > 0;
     const el = document.createElement('div');
-    el.className = 'tree-file' + (entry.dest === selectedDest ? ' selected' : '');
+    el.className = 'tree-file' + (hasDups ? ' has-dups' : ' unique') + (entry.dest === selectedDest ? ' selected' : '');
     el.style.paddingLeft = pad + 'px';
     el.dataset.dest = entry.dest;
     const icon = entry._type === 'video' ? '\U0001F3AC' : '\U0001F5BC\uFE0F';
     el.innerHTML =
       '<span class="file-icon">' + icon + '</span>' +
       '<span class="fname">' + esc(filename) + '</span>' +
+      (hasDups ? '<span class="dup-count">' + dupCount + '</span>' : '') +
       (entry.already_at_dest ? '<span class="done-badge">\u2713</span>' : '');
     el.addEventListener('click', () => select(entry, el));
     container.appendChild(el);
